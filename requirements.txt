@@ -1,0 +1,6 @@
+numpy
+pillow
+pillow_heif==0.22.0
+opencv-python-headless
+colour-science
+matplotlib
