@@ -1,7 +1,7 @@
 UhdrGen
 ========
 
-Convert your SDR + HDR images to Ultra HDR with gainmap.
+Convert SDR + HDR images to Ultra HDR with gainmap.
 
 Description
 -----------
@@ -52,26 +52,16 @@ Single file mode:
 
 Batch mode (entire folder):
 - SDR and HDR images must share the same base name with suffixes `_sdr` / `_hdr`:
-    image1_sdr.png / image1_hdr.exr
-    image2_sdr.png / image2_hdr.exr
+    image1_sdr.jpg / image1_hdr.avif
+    image2_sdr.jpg / image2_hdr.avif
 
-   python main.py --input_dir path/to/images/
+   python main.py --dir path/to/images/
 
 CLI Options
 -----------
 --sdr          : Path to the SDR image (single file mode)
 --hdr          : Path to the HDR image (single file mode)
---input_dir    : Directory containing SDR/HDR image pairs (batch mode)
+--dir          : Directory containing SDR/HDR image pairs (batch mode)
 --output       : Output file (single mode) or output folder (batch mode)
 --mode         : Conversion mode (default: sdr_hdr_uhdr)
 
-References
-----------
-- Ultra HDR Gainmap Spec (Android)
-- Pillow: https://pillow.readthedocs.io/
-- pillow-heif: https://pypi.org/project/pillow-heif/
-- colour-science: https://pypi.org/project/colour-science/
-
-License
--------
-MIT License – free for personal and commercial use.
