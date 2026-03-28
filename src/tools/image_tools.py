@@ -146,3 +146,27 @@ def open_sdr_image(
 
     return image_np, colourspace
 
+
+def get_linear_image(
+    image: np.ndarray,
+    rgb_profile: colour.RGB_Colourspace,
+    is_hdr: bool = False,
+) -> np.ndarray:
+    ratio = 1 if not is_hdr else 203
+    return rgb_profile.cctf_decoding(image) / ratio
+
+
+def get_adapted_rgb_primaries(
+    image: np.ndarray,
+    origin_rgb_profile: colour.RGB_Colourspace,
+    new_rgb_profile: colour.RGB_Colourspace,
+    is_hdr: bool = False,
+):
+    dest_image = colour.RGB_to_RGB(
+        RGB=image,
+        input_colourspace=origin_rgb_profile,
+        output_colourspace=new_rgb_profile,
+        chromatic_adaptation_transform="Bradford",
+    )
+    max_value = 1.0 if not is_hdr else None
+    return np.clip(dest_image, 0, max_value)

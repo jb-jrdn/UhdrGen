@@ -32,40 +32,45 @@ class SdrHdrToUhdr:
         self.keep_temp_files = keep_temp_files
 
     def run(self) -> None:
+        # load images
         self.sdr_np_image, self.sdr_rgb_profile = image_tools.open_sdr_image(self.sdr_path)
         self.hdr_np_image, self.hdr_rgb_profile = image_tools.open_hdr_avif_image(self.hdr_path)
 
-        sdr_np_image_linear = self.sdr_rgb_profile.cctf_decoding(self.sdr_np_image)
+        # get rgb linear values
+        sdr_np_image_linear = image_tools.get_linear_image(self.sdr_np_image, self.sdr_rgb_profile)
+        hdr_np_image_linear = image_tools.get_linear_image(self.hdr_np_image, self.hdr_rgb_profile, is_hdr=True)
 
-        hdr_np_image_linear = self.hdr_rgb_profile.cctf_decoding(self.hdr_np_image) / 203
-        self.hdr_rgb_profile = colour.RGB_to_RGB(
-            RGB=self.hdr_np_image,
-            input_colourspace=self.hdr_rgb_profile,
-            output_colourspace=self.sdr_rgb_profile,
-            chromatic_adaptation_transform="Bradford",
+        # convert hdr values to the sdr color profile
+        hdr_np_image_linear = image_tools.get_adapted_rgb_primaries(
+            image=hdr_np_image_linear,
+            origin_rgb_profile=self.hdr_rgb_profile,
+            new_rgb_profile=self.sdr_rgb_profile,
+            is_hdr=True,
         )
-        hdr_np_image_linear = np.clip(hdr_np_image_linear, 0, None)
 
+        # process gain map
         self.gainmap_np_image, min_map, max_map = uhdr_tools.get_uhdr_gainmap(
             sdr_np_image_linear=sdr_np_image_linear,
             hdr_np_image_linear=hdr_np_image_linear,
             metadata=self.metadata,
         )
 
+        # save gain map
         uhdr_tools.write_gainmap(
             gainmap=self.gainmap_np_image,
             gainmap_path=self.gainmap_path,
             quality=100,
         )
         
+        # create metadata file
         self.metadata.min_content_boost = min_map
         self.metadata.max_content_boost = max_map
-
         uhdr_tools.create_uhdr_metadata(
             metadata=self.metadata,
             metadata_path=self.metadata_path
         )
 
+        # create uhdr image with ultrahdr_app
         uhdr_tools.create_uhdr_image_from_sdr_and_gainmap(
             sdr_path=self.sdr_path,
             gainmap_path=self.gainmap_path,
@@ -73,6 +78,7 @@ class SdrHdrToUhdr:
             output_uhdr_path=self.uhdr_path,
         )
 
+        # delete temp files if needed
         if not self.keep_temp_files:
             os.remove(self.gainmap_path)
             os.remove(self.metadata_path)
@@ -95,7 +101,7 @@ class SdrHdrToUhdr:
 def process_folder(
     input_directory: str,
     overwrite_existing: bool = False,
-    keep_temporary_files: bool = False,
+    keep_temp_files: bool = False,
 ) -> None:
     """
     Processes all JPG images in the specified directory to generate UHDR images.
@@ -131,7 +137,7 @@ def process_folder(
                 process = SdrHdrToUhdr(
                     sdr_path=os.path.join(input_directory, filename),
                     hdr_path=corresponding_avif_filepath,
-                    keep_temp_files=keep_temporary_files,
+                    keep_temp_files=keep_temp_files,
                 )
                 process.validate()
                 process.run()

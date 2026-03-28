@@ -41,13 +41,13 @@ def create_uhdr_metadata(
     used_max_hdr_capacity = min(metadata.max_hdr_capacity, metadata.max_content_boost)
 
     content_lines = [
-        f"--minContentBoost {metadata.min_content_boost:.3f}",
-        f"--maxContentBoost {metadata.max_content_boost:.3f}",
-        f"--gamma {metadata.gamma:.3f}",
+        f"--minContentBoost {metadata.min_content_boost:.2f}",
+        f"--maxContentBoost {metadata.max_content_boost:.2f}",
+        f"--gamma {metadata.gamma:.2f}",
         f"--offsetSdr {metadata.sdr_offset:.6f}",
         f"--offsetHdr {metadata.hdr_offset:.6f}",
-        f"--hdrCapacityMin {metadata.min_hdr_capacity:.3f}",
-        f"--hdrCapacityMax {used_max_hdr_capacity:.3f}",
+        f"--hdrCapacityMin {metadata.min_hdr_capacity:.2f}",
+        f"--hdrCapacityMax {used_max_hdr_capacity:.2f}",
         f"--useBaseColorSpace {metadata.use_base_color_space}",
     ]
     content = "\n".join(content_lines)
@@ -60,7 +60,7 @@ def get_uhdr_gainmap(
     sdr_np_image_linear: np.ndarray,
     hdr_np_image_linear: np.ndarray,
     metadata: UhdrMetadata,
-    min_gain: float = 1.0,
+    min_gain: float = 0.8,
     max_gain: float = 10000/203,
 ) -> tuple[np.ndarray, float, float]:
     """
@@ -79,6 +79,8 @@ def get_uhdr_gainmap(
     """
     gain = (hdr_np_image_linear + metadata.hdr_offset) / (sdr_np_image_linear + metadata.sdr_offset)
 
+    gain = get_gain_optimized_for_luminance(gain)
+
     min_content_boost = np.clip(np.min(gain), min_gain, max_gain)
     max_content_boost = np.clip(np.max(gain), min_gain, max_gain)
 
@@ -93,6 +95,30 @@ def get_uhdr_gainmap(
     recovery = np.power(clamped_recovery, metadata.gamma)
     gainmap = np.round(recovery * 255 + 0.5).astype(np.uint8)
     return gainmap, min_content_boost, max_content_boost
+
+
+def get_gain_optimized_for_luminance(
+    gain: np.ndarray,
+) -> np.ndarray:
+    max_rgb = np.max(gain, axis=-1)
+
+    p_low = np.percentile(max_rgb, 99.8)
+    p_high = np.percentile(max_rgb, 99.95)
+    gmax = max_rgb.max()
+
+    #print(f"max: {gmax}; p990: {p_low}; p995: {p_high}")
+
+    eps = 1e-8
+    scale = (p_high - p_low) / (gmax - p_low + eps)
+
+    mapped = max_rgb.copy()
+    mask = mapped > p_low
+    mapped[mask] = p_low + (mapped[mask] - p_low) * scale
+
+    ratio = mapped / (max_rgb + eps)
+
+    gm = gain * ratio[..., None]
+    return gm
 
 
 def write_gainmap(

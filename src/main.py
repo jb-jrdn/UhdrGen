@@ -5,19 +5,20 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="Convert SDR + HDR images to Ultra HDR (gainmap JPEG)",
-            epilog="""
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog="""
 Examples:
+    Single image:
+        main.py --sdr img_sdr.jpg --hdr img_hdr.avif
+        main.py --mode sdr_hdr_uhdr --sdr img_sdr.jpg --hdr img_hdr.avif -o myUhdr.jpg
 
-  Single image:
-    main.py --mode sdr_hdr_uhdr --sdr img_sdr.jpg --hdr img_hdr.avif
-    main.py --mode sdr_hdr_uhdr --sdr img_sdr.jpg --hdr img_hdr.avif --output myUhdr.jpg
+    Batch on folder: process all SDR & HDR pair in the folder (ex: img_sdr.jpg & img_hdr.avif)
+        main.py --mode sdr_hdr_uhdr --dir '/Users/my/Desktop/export'
 
-  Batch on folder: process all SDR & HDR pair in the folder (ex: img_sdr.jpg & img_hdr.avif)
-    main.py --mode sdr_hdr_uhdr --input_dir ./images
 """
     )
     parser.add_argument(
-        "--mode",
+        "-m", "--mode",
         default="sdr_hdr_uhdr",
         choices=["sdr_hdr_uhdr"],
         help="Processing mode (currently only sdr_hdr_uhdr supported)",
@@ -31,12 +32,17 @@ Examples:
         help="Path to HDR image (.avif), for single convertion",
     )
     parser.add_argument(
-        "--output",
+        "-o", "--output",
         help="Output file, for single mode",
     )
     parser.add_argument(
-        "--dir",
+        "-d", "--dir",
         help="Directory containing SDR/HDR image pairs (same folder, same name)"
+    )
+    parser.add_argument(
+        "-k",
+        action="store_true",
+        help="Keep gainmap and metadata files"
     )
 
     args = parser.parse_args()
@@ -48,6 +54,7 @@ Examples:
                 sdr_path=args.sdr,
                 hdr_path=args.hdr,
                 uhdr_path=args.output,
+                keep_temp_files=args.k,
             )
 
         process.validate()
@@ -58,6 +65,7 @@ Examples:
         if args.mode == "sdr_hdr_uhdr":
             sdr_hdr_to_uhdr.process_folder(
                 input_directory=args.dir,
+                keep_temp_files=args.k,
             )
 
 
