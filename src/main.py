@@ -62,16 +62,4 @@ Examples:
 
 
 if __name__ == "__main__":
-    """
-    sdr_hdr_to_uhdr.process_folder(
-        input_directory=r"/Users/jb/Desktop/export",
-    )
-    exit()
-    genuhdr = sdr_hdr_to_uhdr.SdrHdrToUhdr(
-        sdr_path=r"/Users/jb/Desktop/export/DSCF2155.jpg",
-        hdr_path=r"/Users/jb/Desktop/export/DSCF2155.avif",
-    )
-    genuhdr.validate()
-    genuhdr.run()
-    """
     main()
