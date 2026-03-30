@@ -1,6 +1,11 @@
 from gen import sdr_hdr_to_uhdr
 
+SUPPORTED_MODES = ["sdr_hdr_uhdr"]
+
 def main():
+    """
+    Entry point of the script. Parses the command-line arguments and starts the processing.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -20,54 +25,55 @@ Examples:
     parser.add_argument(
         "-m", "--mode",
         default="sdr_hdr_uhdr",
-        choices=["sdr_hdr_uhdr"],
-        help="Processing mode (currently only sdr_hdr_uhdr supported)",
+        choices=SUPPORTED_MODES,
+        help="Processing mode",
     )
+    parser.add_argument("--sdr", help="Path to SDR image (.jpg)")
+    parser.add_argument("--hdr", help="Path to HDR image (.avif)")
+    parser.add_argument("-o", "--output", help="Output file")
+    parser.add_argument("-d", "--dir",help="Directory containing SDR/HDR image pairs")
     parser.add_argument(
-        "--sdr",
-        help="Path to SDR image (.jpg), for single convertion",
-    )
-    parser.add_argument(
-        "--hdr",
-        help="Path to HDR image (.avif), for single convertion",
-    )
-    parser.add_argument(
-        "-o", "--output",
-        help="Output file, for single mode",
-    )
-    parser.add_argument(
-        "-d", "--dir",
-        help="Directory containing SDR/HDR image pairs (same folder, same name)"
-    )
-    parser.add_argument(
-        "-k",
+        "-k", "--keep-temp-files",
         action="store_true",
-        help="Keep gainmap and metadata files"
+        help="Keep gainmap and metadata files",
     )
 
     args = parser.parse_args()
 
     if args.sdr and args.hdr:
+        process_single_image(args)
+    elif args.dir:
+        process_folder(args)
 
+def process_single_image(args):
+    """Processes a pair of SDR/HDR images."""
+    try:
         if args.mode == "sdr_hdr_uhdr":
             process = sdr_hdr_to_uhdr.SdrHdrToUhdr(
                 sdr_path=args.sdr,
                 hdr_path=args.hdr,
                 uhdr_path=args.output,
-                keep_temp_files=args.k,
+                keep_temp_files=args.keep_temp_files,
             )
-
+        else:
+            return
         process.validate()
         process.run()
+    except Exception as e:
+        print(f"Error during processing : {e}")
 
-    elif args.dir:
-
+def process_folder(args):
+    """Processes a folder containing SDR/HDR pairs."""
+    try:
         if args.mode == "sdr_hdr_uhdr":
             sdr_hdr_to_uhdr.process_folder(
                 input_directory=args.dir,
-                keep_temp_files=args.k,
+                keep_temp_files=args.keep_temp_files,
             )
-
+        else:
+            return
+    except Exception as e:
+        print(f"Error processing image folder : {e}")
 
 if __name__ == "__main__":
     main()

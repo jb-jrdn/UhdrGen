@@ -10,8 +10,8 @@ ULTRAHDR_APP = r"ultrahdr_app"
 
 @dataclass
 class UhdrMetadata:
-    min_content_boost: float
-    max_content_boost: float
+    min_content_boost: float | None = None
+    max_content_boost: float | None = None
     gamma: float = 1.0
     sdr_offset: float = 1/64
     hdr_offset: float = 1/64
@@ -21,8 +21,13 @@ class UhdrMetadata:
 
     def is_valid(self) -> bool:
         return (
-            self.max_hdr_capacity >= self.min_hdr_capacity > 1 and
-            self.max_content_boost >= self.min_content_boost > 0 and
+            self.min_content_boost is not None and
+            self.max_content_boost is not None and
+            self.max_hdr_capacity >= 1 and 
+            self.min_hdr_capacity >= 1 and
+            self.max_content_boost >= self.min_content_boost and
+            self.sdr_offset > 0 and
+            self.hdr_offset > 0 and
             self.use_base_color_space in [0,1]
         )
 
@@ -32,12 +37,19 @@ def create_uhdr_metadata(
     metadata: UhdrMetadata,
 ) -> None:
     """
-    Generate a metadata configuration file for ultrahdr gain maps.
+    Generate a metadata configuration file for Ultra HDR gain maps.
 
     Args:
-        metedata_path: Destination path for the metadata file (typically "metadata.cfg").
-        metadata: UhdrMetadata dataClass
+        metadata_path: Destination path for the metadata file (e.g., "metadata.cfg").
+        metadata: UhdrMetadata dataclass containing metadata parameters.
+
+    Raises:
+        ValueError: If metadata is not valid.
+        IOError: If the file cannot be written.
     """
+    if not metadata.is_valid():
+        raise ValueError("Metadata is not valid.")
+
     used_max_hdr_capacity = min(metadata.max_hdr_capacity, metadata.max_content_boost)
 
     content_lines = [
@@ -52,8 +64,11 @@ def create_uhdr_metadata(
     ]
     content = "\n".join(content_lines)
 
-    with open(metadata_path, 'w', encoding='utf-8') as file:
-        file.write(content)
+    try:
+        with open(metadata_path, 'w', encoding='utf-8') as file:
+            file.write(content)
+    except IOError as e:
+        raise IOError(f"Failed to write metadata file: {e}")
 
 
 def get_uhdr_gainmap(
@@ -64,19 +79,24 @@ def get_uhdr_gainmap(
     max_gain: float = 10000/203,
 ) -> tuple[np.ndarray, float, float]:
     """
-    Get uhdr gainmap from linear SDR and HDR.
-    Update min_content_boost and max_content_boost with gainmap data.
+    Get Ultra HDR gainmap from linear SDR and HDR images.
 
     Args:
-        sdr_np_image_linear: Linear SDR image 0-1].
-        hdr_np_image_linear: Linear HDR image -> 1 is the sdr white level.
-        metadata: metedata used to compute the gainmap.
-        min_gain: Minimum gain value to clamp the gainmap.
-        max_gain: Maximum gain value to clamp the gainmap.
+        sdr_np_image_linear: Linear SDR image [0-1].
+        hdr_np_image_linear: Linear HDR image (1 is the SDR white level).
+        metadata: Metadata used to compute the gainmap.
+        min_gain: Minimum gain value.
+        max_gain: Maximum gain value.
 
     Returns:
         tuple[np.ndarray, float, float]: gainmap, min_content_boost, max_content_boost
+
+    Raises:
+        ValueError: If input images have different shapes.
     """
+    if sdr_np_image_linear.shape != hdr_np_image_linear.shape:
+        raise ValueError("SDR and HDR images must have the same shape.")
+
     gain = (hdr_np_image_linear + metadata.hdr_offset) / (sdr_np_image_linear + metadata.sdr_offset)
 
     gain = get_gain_optimized_for_luminance(gain)
@@ -87,8 +107,8 @@ def get_uhdr_gainmap(
     min_map_log2 = np.log2(min_content_boost)
     max_map_log2 = np.log2(max_content_boost)
 
-    print(f"min: {min_content_boost:.2f}x -> {min_map_log2:.2f} ev")
-    print(f"max: {max_content_boost:.2f}x -> {max_map_log2:.2f} ev")
+    print(f"min gain: {min_content_boost:.2f}x -> {min_map_log2:.2f} ev")
+    print(f"max gain: {max_content_boost:.2f}x -> {max_map_log2:.2f} ev")
 
     log_recovery = (np.log2(gain) - min_map_log2) / (max_map_log2 - min_map_log2)
     clamped_recovery = np.clip(log_recovery, 0.0, 1.0)
@@ -100,13 +120,17 @@ def get_uhdr_gainmap(
 def get_gain_optimized_for_luminance(
     gain: np.ndarray,
 ) -> np.ndarray:
+    """
+    Reduce higher gain value to avoid headroom compression when gain map is applied, based on max value.
+    Produce slighlty lower high values (difficult to see), but better global luminance of HDR image.
+    """
     max_rgb = np.max(gain, axis=-1)
 
     p_low = np.percentile(max_rgb, 99.8)
     p_high = np.percentile(max_rgb, 99.95)
     gmax = max_rgb.max()
 
-    #print(f"max: {gmax}; p990: {p_low}; p995: {p_high}")
+    print(f"Optim param -> max: {gmax:.2f}; p_low: {p_low:.2f}; p_high: {p_high:.2f}")
 
     eps = 1e-8
     scale = (p_high - p_low) / (gmax - p_low + eps)
@@ -117,8 +141,8 @@ def get_gain_optimized_for_luminance(
 
     ratio = mapped / (max_rgb + eps)
 
-    gm = gain * ratio[..., None]
-    return gm
+    optimized_gain = gain * ratio[..., None]
+    return optimized_gain
 
 
 def write_gainmap(
@@ -126,11 +150,27 @@ def write_gainmap(
     gainmap_path: str,
     quality: int = 95,
 ) -> None:
-    cv2.imwrite(
-        gainmap_path,
-        cv2.cvtColor(gainmap, cv2.COLOR_RGB2BGR),
-        [cv2.IMWRITE_JPEG_QUALITY, quality],
-    )
+    """
+    Write a gainmap image to disk in JPEG format.
+
+    Args:
+        gainmap: Gainmap image as a numpy array (uint8, RGB format).
+        gainmap_path: Destination path for the gainmap image.
+        quality: JPEG quality (0-100). Defaults to 95.
+
+    Raises:
+        IOError: If writing the file fails.
+    """
+    try:
+        success = cv2.imwrite(
+            gainmap_path,
+            cv2.cvtColor(gainmap, cv2.COLOR_RGB2BGR),
+            [cv2.IMWRITE_JPEG_QUALITY, quality],
+        )
+        if not success:
+            raise IOError(f"Failed to write gainmap to {gainmap_path}.")
+    except Exception as e:
+        raise IOError(f"Error writing gainmap: {e}")
 
 
 def create_uhdr_image_from_sdr_and_gainmap(
@@ -148,12 +188,17 @@ def create_uhdr_image_from_sdr_and_gainmap(
         sdr_path: Path to the input SDR image.
         gainmap_path: Path to the gainmap image.
         metadata_path: Path to the metadata file.
-        uhdr_path: Output path for the generated UHDR image. If None, a default path is constructed.
-        base_image_quality: Quality of the base image (0-100). Defaults to 100.
-        gainmap_image_quality: Quality of the gainmap image (0-100). Defaults to 100.
+        output_uhdr_path: Output path for the generated UHDR image. If None, a default path is constructed.
+        base_image_quality: Quality of the base image (0-100). Defaults to 95.
+        gainmap_image_quality: Quality of the gainmap image (0-100). Defaults to 95.
 
     Returns:
         str: Path to the generated UHDR image.
+
+    Raises:
+        FileNotFoundError: If input files are not found.
+        ValueError: If quality values are invalid.
+        RuntimeError: If the subprocess command fails.
     """
 
     # checks
@@ -184,10 +229,10 @@ def create_uhdr_image_from_sdr_and_gainmap(
         subprocess.run(command, check=True)
         print(f"Process completed successfully: {uhdr_path}")
     except subprocess.CalledProcessError as e:
-        print(f"Error while running the command: {e}")
         print(f"Return code: {e.returncode}")
+        raise RuntimeError(f"Command failed: {e}") from e
     except Exception as e:
         print(f"Unexpected error: {e}")
+        raise
 
     return uhdr_path
-

@@ -27,7 +27,7 @@ class SdrHdrToUhdr:
         self.gainmap_np_image = None
 
         self.metadata_path = None
-        self.metadata = uhdr_tools.UhdrMetadata
+        self.metadata = uhdr_tools.UhdrMetadata()
 
         self.keep_temp_files = keep_temp_files
 
@@ -67,7 +67,7 @@ class SdrHdrToUhdr:
         self.metadata.max_content_boost = max_map
         uhdr_tools.create_uhdr_metadata(
             metadata=self.metadata,
-            metadata_path=self.metadata_path
+            metadata_path=self.metadata_path,
         )
 
         # create uhdr image with ultrahdr_app
