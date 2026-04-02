@@ -1,6 +1,4 @@
 import os
-import colour
-import numpy as np
 from tools import uhdr_tools
 from tools import image_tools
 
@@ -15,7 +13,7 @@ class SdrHdrToUhdr:
     ) -> None:
         self.sdr_path = sdr_path
         self.sdr_np_image = None
-        self.sdr_rgb_profile = colour.RGB_COLOURSPACES["Display P3"]
+        self.sdr_rgb_profile = None
 
         self.hdr_path = hdr_path
         self.hdr_np_image = None
@@ -59,7 +57,6 @@ class SdrHdrToUhdr:
         uhdr_tools.write_gainmap(
             gainmap=self.gainmap_np_image,
             gainmap_path=self.gainmap_path,
-            quality=100,
         )
         
         # create metadata file

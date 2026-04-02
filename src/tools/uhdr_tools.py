@@ -50,16 +50,16 @@ def create_uhdr_metadata(
     if not metadata.is_valid():
         raise ValueError("Metadata is not valid.")
 
-    used_max_hdr_capacity = min(metadata.max_hdr_capacity, metadata.max_content_boost)
+    used_max_hdr_capacity = max(min(metadata.max_hdr_capacity, metadata.max_content_boost), 1.1)
 
     content_lines = [
-        f"--minContentBoost {metadata.min_content_boost:.2f}",
-        f"--maxContentBoost {metadata.max_content_boost:.2f}",
-        f"--gamma {metadata.gamma:.2f}",
+        f"--minContentBoost {metadata.min_content_boost:.3f}",
+        f"--maxContentBoost {metadata.max_content_boost:.3f}",
+        f"--gamma {metadata.gamma:.3f}",
         f"--offsetSdr {metadata.sdr_offset:.6f}",
         f"--offsetHdr {metadata.hdr_offset:.6f}",
-        f"--hdrCapacityMin {metadata.min_hdr_capacity:.2f}",
-        f"--hdrCapacityMax {used_max_hdr_capacity:.2f}",
+        f"--hdrCapacityMin {metadata.min_hdr_capacity:.3f}",
+        f"--hdrCapacityMax {used_max_hdr_capacity:.3f}",
         f"--useBaseColorSpace {metadata.use_base_color_space}",
     ]
     content = "\n".join(content_lines)
@@ -113,7 +113,7 @@ def get_uhdr_gainmap(
     log_recovery = (np.log2(gain) - min_map_log2) / (max_map_log2 - min_map_log2)
     clamped_recovery = np.clip(log_recovery, 0.0, 1.0)
     recovery = np.power(clamped_recovery, metadata.gamma)
-    gainmap = np.round(recovery * 255 + 0.5).astype(np.uint8)
+    gainmap = np.round(recovery * 255).astype(np.uint8)
     return gainmap, min_content_boost, max_content_boost
 
 
@@ -130,7 +130,7 @@ def get_gain_optimized_for_luminance(
     p_high = np.percentile(max_rgb, 99.95)
     gmax = max_rgb.max()
 
-    print(f"Optim param -> max: {gmax:.2f}; p_low: {p_low:.2f}; p_high: {p_high:.2f}")
+    print(f"optim param -> max: {gmax:.2f} | p_low: {p_low:.2f} | p_high: {p_high:.2f}")
 
     eps = 1e-8
     scale = (p_high - p_low) / (gmax - p_low + eps)
@@ -148,7 +148,8 @@ def get_gain_optimized_for_luminance(
 def write_gainmap(
     gainmap: np.ndarray,
     gainmap_path: str,
-    quality: int = 95,
+    quality: int = 90,
+    size_factor: int = 1,
 ) -> None:
     """
     Write a gainmap image to disk in JPEG format.
@@ -156,12 +157,16 @@ def write_gainmap(
     Args:
         gainmap: Gainmap image as a numpy array (uint8, RGB format).
         gainmap_path: Destination path for the gainmap image.
-        quality: JPEG quality (0-100). Defaults to 95.
+        quality: JPEG quality (0-100). Best 100, worst 0, default 90.
+        size_factor: gainmap size. Best 1, worst 128, default 1.
 
     Raises:
         IOError: If writing the file fails.
     """
     try:
+        if size_factor != 1:
+            height, width = gainmap.shape[:2]
+            gainmap = cv2.resize(gainmap, (width // size_factor, height // size_factor))
         success = cv2.imwrite(
             gainmap_path,
             cv2.cvtColor(gainmap, cv2.COLOR_RGB2BGR),
@@ -178,8 +183,6 @@ def create_uhdr_image_from_sdr_and_gainmap(
     gainmap_path: str,
     metadata_path: str,
     output_uhdr_path: str | None = None,
-    base_image_quality: int = 95,
-    gainmap_image_quality:int = 95,
 ) -> str:
     """
     Generates a UHDR image from an SDR image, gainmap, and metadata.
@@ -189,8 +192,6 @@ def create_uhdr_image_from_sdr_and_gainmap(
         gainmap_path: Path to the gainmap image.
         metadata_path: Path to the metadata file.
         output_uhdr_path: Output path for the generated UHDR image. If None, a default path is constructed.
-        base_image_quality: Quality of the base image (0-100). Defaults to 95.
-        gainmap_image_quality: Quality of the gainmap image (0-100). Defaults to 95.
 
     Returns:
         str: Path to the generated UHDR image.
@@ -208,10 +209,6 @@ def create_uhdr_image_from_sdr_and_gainmap(
         raise FileNotFoundError(f"Gain map not found: {gainmap_path}")
     if not os.path.exists(metadata_path):
         raise FileNotFoundError(f"Metadata not found: {metadata_path}")
-    if not 0 <= base_image_quality <= 100:
-        raise ValueError(f"base_image_quality must be in [0-100]. {base_image_quality} given.")
-    if not 0 <= gainmap_image_quality <= 100:
-        raise ValueError(f"base_image_quality must be in [0-100]. {gainmap_image_quality} given.")
 
     uhdr_path = output_uhdr_path or f"{os.path.splitext(sdr_path)[0]}_uhdr.jpg"
     command = [
@@ -221,8 +218,6 @@ def create_uhdr_image_from_sdr_and_gainmap(
         "-g", gainmap_path,
         "-f", metadata_path,
         "-z", uhdr_path,
-        "-q", str(base_image_quality),
-        "-Q", str(gainmap_image_quality),
     ]
 
     try:
